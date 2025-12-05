@@ -1,0 +1,1133 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Steal a Brainrot 3D: Online Multiplayer</title>
+    <style>
+        body { margin: 0; overflow: hidden; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; user-select: none; }
+        #canvas-container { width: 100vw; height: 100vh; display: block; }
+        
+        /* UI Overlay */
+        #ui-layer {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+        }
+
+        #stats-panel {
+            padding: 20px;
+            color: #fff;
+            text-shadow: 2px 2px 0 #000;
+            background: linear-gradient(to right, rgba(0,0,0,0.6), transparent);
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+        }
+
+        .stat-row { font-size: 24px; font-weight: bold; }
+        .sub-stat { font-size: 18px; color: #00ff00; }
+        .room-stat { font-size: 16px; color: #ffff00; margin-top: 5px; }
+
+        #crosshair {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 20px;
+            height: 20px;
+            background-color: transparent;
+            border: 2px solid rgba(255, 255, 255, 0.8);
+            border-radius: 50%;
+            transform: translate(-50%, -50%);
+            z-index: 10;
+        }
+
+        #dot {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 4px;
+            height: 4px;
+            background-color: red;
+            border-radius: 50%;
+            transform: translate(-50%, -50%);
+        }
+
+        #instructions {
+            position: absolute;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            color: white;
+            text-align: center;
+            font-size: 18px;
+            text-shadow: 1px 1px 2px black;
+            background: rgba(0,0,0,0.5);
+            padding: 10px 20px;
+            border-radius: 20px;
+        }
+
+        #pause-hint {
+            position: absolute;
+            top: 10px;
+            right: 20px;
+            color: rgba(255,255,255,0.5);
+            font-size: 14px;
+        }
+
+        /* Start/Menu Screen */
+        #blocker {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0,0,0,0.85);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 20;
+            pointer-events: auto;
+            flex-direction: column;
+        }
+
+        #menu-content {
+            background: rgba(0,0,0,0.8);
+            padding: 40px;
+            border-radius: 20px;
+            border: 2px solid #4CAF50;
+            text-align: center;
+            max-width: 500px;
+            width: 90%;
+        }
+
+        h1 { font-size: 50px; margin: 0 0 20px 0; color: #ff00ff; text-shadow: 4px 4px 0 #000; }
+        p { font-size: 18px; color: #ddd; margin-bottom: 30px; }
+        
+        .input-group {
+            margin: 20px 0;
+            display: flex;
+            gap: 10px;
+            justify-content: center;
+        }
+
+        input {
+            padding: 15px;
+            font-size: 20px;
+            border-radius: 8px;
+            border: none;
+            width: 150px;
+            text-align: center;
+            text-transform: uppercase;
+            font-weight: bold;
+        }
+
+        .btn {
+            background: #4CAF50;
+            border: none;
+            color: white;
+            padding: 15px 32px;
+            text-align: center;
+            text-decoration: none;
+            display: inline-block;
+            font-size: 20px;
+            cursor: pointer;
+            border-radius: 8px;
+            transition: 0.2s;
+            box-shadow: 0 5px 0 #2E7D32;
+            width: 100%;
+            margin-bottom: 15px;
+        }
+        .btn:hover { background: #45a049; }
+        .btn:active { transform: translateY(5px); box-shadow: none; }
+        .btn-blue { background: #2196F3; box-shadow: 0 5px 0 #0D47A1; }
+        .btn-blue:hover { background: #1E88E5; }
+
+        /* Notification */
+        #notification {
+            position: absolute;
+            top: 30%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: #00ff00;
+            font-size: 24px;
+            font-weight: bold;
+            opacity: 0;
+            transition: opacity 0.5s;
+            text-shadow: 2px 2px 0 #000;
+            pointer-events: none;
+            background: rgba(0,0,0,0.5);
+            padding: 5px 10px;
+            border-radius: 5px;
+        }
+        .bad-notif { color: red !important; }
+
+        .loader {
+            border: 5px solid #f3f3f3;
+            border-top: 5px solid #ff00ff;
+            border-radius: 50%;
+            width: 30px;
+            height: 30px;
+            animation: spin 1s linear infinite;
+            margin: 20px auto;
+            display: none;
+        }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+    </style>
+</head>
+<body>
+
+    <div id="ui-layer">
+        <div id="stats-panel">
+            <div class="stat-row">Деньги: $<span id="score">0</span></div>
+            <div class="sub-stat">Доход: $<span id="income">0</span>/сек</div>
+            <div class="room-stat">Комната: <span id="room-code-display">---</span> | Игроков: <span id="player-count">1</span></div>
+        </div>
+        
+        <div id="pause-hint">Кликни для игры</div>
+
+        <div id="crosshair">
+            <div id="dot"></div>
+        </div>
+
+        <div id="instructions">
+            WASD - Ходить | E - Взять/Поставить | SHIFT - Бег
+        </div>
+        
+        <div id="notification">Notification</div>
+    </div>
+
+    <div id="blocker">
+        <div id="menu-content">
+            <h1>STEAL A BRAINROT</h1>
+            <p>ОНЛАЙН МУЛЬТИПЛЕЕР</p>
+            
+            <div id="auth-loading" class="loader" style="display:block;"></div>
+            
+            <div id="menu-actions" style="display:none;">
+                <button class="btn" onclick="createRoom()">СОЗДАТЬ НОВУЮ</button>
+                
+                <div style="color: #aaa; margin: 10px 0;">или</div>
+                
+                <div class="input-group">
+                    <input type="text" id="room-input" placeholder="КОД" maxlength="4">
+                    <button class="btn btn-blue" style="width: auto; margin:0;" onclick="joinRoom()">ВОЙТИ</button>
+                </div>
+            </div>
+            
+            <p id="menu-error" style="color: red; margin-top: 10px; font-size: 16px;"></p>
+        </div>
+    </div>
+
+    <div id="canvas-container"></div>
+
+    <!-- Import Three.js & Firebase -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/PointerLockControls.js"></script>
+    
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, setDoc, getDoc, onSnapshot, updateDoc, arrayUnion, increment } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // --- Firebase Init ---
+        const firebaseConfig = JSON.parse(__firebase_config);
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+        const db = getFirestore(app);
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app';
+
+        let currentUser = null;
+        let currentRoomId = null;
+        let roomUnsubscribe = null;
+
+        // --- Game Variables ---
+        let camera, scene, renderer, controls;
+        let moveForward = false, moveBackward = false, moveLeft = false, moveRight = false, isSprinting = false;
+        let prevTime = performance.now();
+        let velocity = new THREE.Vector3();
+        let direction = new THREE.Vector3();
+        
+        let raycaster;
+        let holdingObject = null;
+        let objects = []; 
+        let shopObjects = []; 
+        let conveyorObjects = []; 
+        let installedObjects = []; // Local representation of shared objects
+        let remotePlayers = {}; // Map of userId -> Mesh
+        let bots = []; 
+
+        let score = 0;
+        let passiveIncome = 0;
+        let gameStarted = false;
+        let isHost = false; 
+        
+        // Settings
+        let conveyorSpeed = 0.02; 
+        let spawnRate = 3000;
+        let spawnInterval;
+        let rareChance = 0.1;
+        
+        // Sync Timers
+        let lastSyncTime = 0;
+        const SYNC_RATE = 100; // ms
+
+        // Upgrades Costs
+        const costs = { speed: 150, luck: 500, value: 1000 };
+
+        // Memes Data
+        const memes = [
+            { id: 0, name: "Skibidi", color: 0xffffff, type: 'cylinder', val: 1, labelColor: '#000' },
+            { id: 1, name: "Ohio", color: 0x888888, type: 'box', val: 2, labelColor: '#fff' },
+            { id: 2, name: "Rizzler", color: 0xff0000, type: 'sphere', val: 5, labelColor: '#fff' },
+            { id: 3, name: "Sigma", color: 0x333333, type: 'box', val: 10, labelColor: '#00ff00' }, 
+            { id: 4, name: "Gigachad", color: 0xD2B48C, type: 'box', val: 20, labelColor: '#000' }, 
+            { id: 5, name: "Mewing", color: 0xFF69B4, type: 'sphere', val: 50, labelColor: '#fff' } 
+        ];
+
+        // --- Auth & Menu Logic ---
+        
+        // Correct Auth Flow: Check for custom token first
+        const initAuth = async () => {
+            try {
+                if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                    await signInWithCustomToken(auth, __initial_auth_token);
+                } else {
+                    await signInAnonymously(auth);
+                }
+            } catch (e) {
+                console.error("Auth Failed:", e);
+                document.getElementById('menu-error').innerText = "Ошибка авторизации";
+            }
+        };
+        initAuth();
+        
+        onAuthStateChanged(auth, (user) => {
+            if (user) {
+                currentUser = user;
+                document.getElementById('auth-loading').style.display = 'none';
+                document.getElementById('menu-actions').style.display = 'block';
+            }
+        });
+
+        window.createRoom = async function() {
+            if(!currentUser) return;
+            const code = Math.floor(1000 + Math.random() * 9000).toString();
+            
+            // Initial Room State
+            const roomData = {
+                host: currentUser.uid,
+                score: 0,
+                income: 0,
+                objects: [], // { typeId: 0, x: 0, z: 0 }
+                players: {
+                    [currentUser.uid]: { x: 0, y: 0, z: 0, rot: 0, lastSeen: Date.now() }
+                }
+            };
+
+            try {
+                // Path must be: artifacts/{appId}/public/data/{collection}/{doc}
+                // We use 'rooms' as the collection name.
+                const roomRef = doc(db, 'artifacts', appId, 'public', 'data', 'rooms', `room_${code}`);
+                await setDoc(roomRef, roomData);
+                startGame(code, true);
+            } catch (e) {
+                console.error(e);
+                document.getElementById('menu-error').innerText = "Ошибка создания: " + e.message;
+            }
+        }
+
+        window.joinRoom = async function() {
+            if(!currentUser) return;
+            const code = document.getElementById('room-input').value.trim();
+            if(code.length !== 4) {
+                document.getElementById('menu-error').innerText = "Введите 4-значный код";
+                return;
+            }
+
+            try {
+                const roomRef = doc(db, 'artifacts', appId, 'public', 'data', 'rooms', `room_${code}`);
+                const snap = await getDoc(roomRef);
+                
+                if(snap.exists()) {
+                    startGame(code, false);
+                } else {
+                    document.getElementById('menu-error').innerText = "Комната не найдена";
+                }
+            } catch (e) {
+                console.error(e);
+                document.getElementById('menu-error').innerText = "Ошибка входа: " + e.message;
+            }
+        }
+
+        function startGame(code, hostStatus) {
+            currentRoomId = code;
+            isHost = hostStatus;
+            
+            document.getElementById('menu-content').style.display = 'none';
+            document.getElementById('blocker').style.display = 'none'; // Initially hide, controls will lock
+            document.getElementById('room-code-display').innerText = code;
+            
+            gameStarted = true;
+            
+            initThreeJS();
+            setupRoomListener();
+            
+            // Auto lock controls
+            setTimeout(() => {
+                controls.lock();
+            }, 100);
+        }
+
+        function setupRoomListener() {
+            const roomRef = doc(db, 'artifacts', appId, 'public', 'data', 'rooms', `room_${currentRoomId}`);
+            
+            roomUnsubscribe = onSnapshot(roomRef, (docSnap) => {
+                if(!docSnap.exists()) return;
+                const data = docSnap.data();
+
+                // 1. Update Score/Income (Shared Global)
+                score = data.score || 0;
+                passiveIncome = data.income || 0;
+                document.getElementById('score').innerText = Math.floor(score);
+                document.getElementById('income').innerText = passiveIncome;
+
+                // 2. Sync Installed Objects (The Shared Base)
+                if(data.objects) {
+                    syncInstalledObjects(data.objects);
+                }
+
+                // 3. Sync Remote Players
+                if(data.players) {
+                    syncRemotePlayers(data.players);
+                    document.getElementById('player-count').innerText = Object.keys(data.players).length;
+                }
+            });
+        }
+
+        function syncInstalledObjects(serverObjects) {
+            if (serverObjects.length > installedObjects.length) {
+                for (let i = installedObjects.length; i < serverObjects.length; i++) {
+                    const data = serverObjects[i];
+                    createInstalledObject(data.typeId, data.x, data.z);
+                }
+            }
+        }
+
+        function createInstalledObject(typeId, x, z) {
+            const memeType = memes[typeId];
+            let geometry;
+            if (memeType.type === 'cylinder') geometry = new THREE.CylinderGeometry(0.3, 0.3, 0.8, 16);
+            else if (memeType.type === 'sphere') geometry = new THREE.SphereGeometry(0.4, 16, 16);
+            else geometry = new THREE.BoxGeometry(0.6, 0.6, 0.6);
+
+            const texture = createMemeLabel(memeType.name, memeType.labelColor, '#' + memeType.color.toString(16).padStart(6,'0'));
+            const material = new THREE.MeshStandardMaterial({ map: texture });
+            
+            const mesh = new THREE.Mesh(geometry, material);
+            mesh.position.set(x, 0.5, z);
+            mesh.userData = { installed: true, isInteractable: false }; // Static
+            
+            scene.add(mesh);
+            installedObjects.push(mesh); // Track local mesh
+        }
+
+        function syncRemotePlayers(playersData) {
+            const activeIds = new Set();
+            
+            for (const [uid, pData] of Object.entries(playersData)) {
+                if (uid === currentUser.uid) continue; // Skip self
+                
+                activeIds.add(uid);
+                
+                if (!remotePlayers[uid]) {
+                    // Create new player mesh
+                    const group = new THREE.Group();
+                    
+                    // Body
+                    const bodyGeo = new THREE.CylinderGeometry(0.4, 0.4, 1.5, 8);
+                    const bodyMat = new THREE.MeshLambertMaterial({ color: 0x00FFFF }); // Cyan for others
+                    const body = new THREE.Mesh(bodyGeo, bodyMat);
+                    body.position.y = 0.9;
+                    group.add(body);
+
+                    // Head
+                    const headGeo = new THREE.BoxGeometry(0.5, 0.4, 0.5);
+                    const headMat = new THREE.MeshLambertMaterial({ color: 0xFFFFFF });
+                    const head = new THREE.Mesh(headGeo, headMat);
+                    head.position.y = 1.6;
+                    group.add(head);
+                    
+                    // Name
+                    const sprite = createFloatingText("ИГРОК", "", 0.4);
+                    sprite.position.y = 2.2;
+                    group.add(sprite);
+
+                    scene.add(group);
+                    remotePlayers[uid] = group;
+                }
+                
+                // Update position (simple lerp target)
+                // For smoother movement we would tween, but direct set is ok for prototype
+                const mesh = remotePlayers[uid];
+                mesh.position.set(pData.x, pData.y, pData.z);
+                mesh.rotation.y = pData.rot;
+            }
+
+            // Cleanup disconnected
+            for (const uid in remotePlayers) {
+                if (!activeIds.has(uid)) {
+                    scene.remove(remotePlayers[uid]);
+                    delete remotePlayers[uid];
+                }
+            }
+        }
+
+        async function pushPlayerUpdate() {
+            if(!currentRoomId || !currentUser) return;
+            const now = Date.now();
+            if(now - lastSyncTime < SYNC_RATE) return;
+            lastSyncTime = now;
+
+            const roomRef = doc(db, 'artifacts', appId, 'public', 'data', 'rooms', `room_${currentRoomId}`);
+            const camPos = camera.position;
+            const camRot = camera.rotation.y; // Simplified rotation
+
+            const updateKey = `players.${currentUser.uid}`;
+            
+            await updateDoc(roomRef, {
+                [updateKey]: {
+                    x: camPos.x,
+                    y: camPos.y - 1.6, // Feet pos
+                    z: camPos.z,
+                    rot: camRot,
+                    lastSeen: now
+                }
+            }).catch(e => console.log("Sync error (ignore if minor):", e));
+        }
+
+        async function pushInstalledObject(obj) {
+            if(!currentUser) return;
+            const roomRef = doc(db, 'artifacts', appId, 'public', 'data', 'rooms', `room_${currentRoomId}`);
+            
+            const objData = {
+                typeId: obj.userData.typeId,
+                x: obj.position.x,
+                z: obj.position.z,
+                val: obj.userData.value
+            };
+            
+            await updateDoc(roomRef, {
+                objects: arrayUnion(objData),
+                score: increment(objData.val * 10), // Instant bonus
+                income: increment(objData.val)      // Passive income increase
+            });
+        }
+        
+        // --- 3D Engine Setup ---
+
+        function initThreeJS() {
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x87CEEB); 
+            scene.fog = new THREE.Fog(0x87CEEB, 0, 60);
+
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+            camera.position.y = 1.6;
+
+            const light = new THREE.HemisphereLight(0xeeeeff, 0x777788, 0.75);
+            light.position.set(0.5, 1, 0.75);
+            scene.add(light);
+
+            const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
+            dirLight.position.set(10, 20, 10);
+            dirLight.castShadow = true;
+            dirLight.shadow.mapSize.width = 2048;
+            dirLight.shadow.mapSize.height = 2048;
+            scene.add(dirLight);
+
+            controls = new THREE.PointerLockControls(camera, document.body);
+
+            controls.addEventListener('unlock', function () {
+               // Just unlock mouse, game runs
+            });
+
+            document.addEventListener('click', function() {
+                if(gameStarted && !controls.isLocked) {
+                    controls.lock();
+                }
+            });
+
+            scene.add(controls.getObject());
+
+            document.addEventListener('keydown', onKeyDown);
+            document.addEventListener('keyup', onKeyUp);
+
+            raycaster = new THREE.Raycaster();
+
+            createWorld();
+            
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setPixelRatio(window.devicePixelRatio);
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.shadowMap.enabled = true;
+            document.getElementById('canvas-container').appendChild(renderer.domElement);
+
+            window.addEventListener('resize', onWindowResize);
+            
+            // Start Local Loops
+            startSpawning(); 
+            startIncomeTimer(); 
+            
+            // Add local bots for chaos
+            bots.push(new Bot(scene, -5, -5));
+            bots.push(new Bot(scene, -8, 5));
+            
+            animate();
+        }
+
+        // --- Bot Class ---
+        class Bot {
+            constructor(scene, spawnX, spawnZ) {
+                this.mesh = new THREE.Group();
+                
+                const bodyGeo = new THREE.CylinderGeometry(0.4, 0.4, 1.5, 8);
+                const bodyMat = new THREE.MeshLambertMaterial({ color: 0xff0000 });
+                const body = new THREE.Mesh(bodyGeo, bodyMat);
+                body.position.y = 0.9;
+                this.mesh.add(body);
+
+                const headGeo = new THREE.BoxGeometry(0.5, 0.4, 0.5);
+                const headMat = new THREE.MeshLambertMaterial({ color: 0x000000 });
+                const head = new THREE.Mesh(headGeo, headMat);
+                head.position.y = 1.6;
+                this.mesh.add(head);
+
+                const sprite = createFloatingText("ВОР", "", 0.5);
+                sprite.position.y = 2.2;
+                this.mesh.add(sprite);
+
+                scene.add(this.mesh);
+                this.mesh.position.set(spawnX, 0, spawnZ);
+                this.state = 'IDLE'; 
+                this.targetObj = null;
+                this.holdingObj = null;
+                this.speed = 4.5;
+                this.stealCooldown = 0;
+            }
+
+            update(dt) {
+                const pos = this.mesh.position;
+                if(this.stealCooldown > 0) this.stealCooldown -= dt;
+
+                if (this.state === 'IDLE' || this.state === 'HUNTING') {
+                    const distToPlayer = pos.distanceTo(camera.position);
+                    
+                    if (holdingObject && distToPlayer < 10 && this.stealCooldown <= 0) {
+                        this.state = 'CHASING_PLAYER';
+                    } 
+                    else if (!this.targetObj || !conveyorObjects.includes(this.targetObj)) {
+                        this.targetObj = this.findTarget();
+                        this.state = 'HUNTING';
+                    }
+                    
+                    if (this.state === 'HUNTING' && this.targetObj) {
+                        const targetPos = new THREE.Vector3(0, 0, this.targetObj.position.z);
+                        this.moveTo(targetPos, dt);
+                        if (pos.distanceTo(targetPos) < 2) this.grab(this.targetObj);
+                    } else if (this.state === 'CHASING_PLAYER') {
+                        const pPos = camera.position.clone();
+                        pPos.y = 0;
+                        this.moveTo(pPos, dt);
+                        if (distToPlayer < 2.5 && holdingObject) {
+                            playerDropItem(); 
+                            showNotification("БОТ УКРАЛ МЕМ!", true);
+                            this.stealCooldown = 5; 
+                            this.state = 'IDLE';
+                        }
+                        if (!holdingObject || distToPlayer > 15) this.state = 'IDLE';
+                    } else {
+                        this.moveTo(new THREE.Vector3(2,0,-15), dt);
+                    }
+                }
+                else if (this.state === 'TO_BASE') {
+                    const basePos = new THREE.Vector3(-12, 0, 0); 
+                    this.moveTo(basePos, dt);
+                    if (pos.x <= -10) this.disposeItem();
+                }
+                
+                if (this.holdingObj) {
+                    this.holdingObj.position.copy(pos).add(new THREE.Vector3(0, 1, 0.5));
+                }
+            }
+
+            findTarget() {
+                let best = null;
+                let maxVal = -1;
+                for (let obj of conveyorObjects) {
+                    if (obj.position.z > -20 && obj.position.z < 15) { 
+                        if (obj.userData.value > maxVal) {
+                            maxVal = obj.userData.value;
+                            best = obj;
+                        }
+                    }
+                }
+                return best;
+            }
+
+            moveTo(target, dt) {
+                const direction = new THREE.Vector3().subVectors(target, this.mesh.position);
+                direction.y = 0; 
+                if (direction.length() > 0.1) {
+                    direction.normalize();
+                    this.mesh.position.add(direction.multiplyScalar(this.speed * dt));
+                    this.mesh.lookAt(target.x, this.mesh.position.y, target.z);
+                }
+            }
+
+            grab(obj) {
+                if (conveyorObjects.includes(obj)) {
+                    this.holdingObj = obj;
+                    const idx = conveyorObjects.indexOf(obj);
+                    if (idx > -1) conveyorObjects.splice(idx, 1);
+                    obj.userData.onConveyor = false;
+                    this.state = 'TO_BASE';
+                }
+            }
+
+            disposeItem() {
+                if (this.holdingObj) {
+                    scene.remove(this.holdingObj); 
+                    this.holdingObj = null;
+                    this.state = 'IDLE';
+                }
+            }
+        }
+
+        // --- Standard Logic ---
+
+        function createWorld() {
+            // Floor
+            const floorGeometry = new THREE.PlaneGeometry(200, 200);
+            const floorMaterial = new THREE.MeshLambertMaterial({ color: 0x222222 });
+            const floor = new THREE.Mesh(floorGeometry, floorMaterial);
+            floor.rotation.x = -Math.PI / 2;
+            floor.receiveShadow = true;
+            scene.add(floor);
+            
+            const gridHelper = new THREE.GridHelper(200, 50, 0x444444, 0x333333);
+            scene.add(gridHelper);
+
+            createConveyor();
+            createZones();
+            createPhysicalShops();
+        }
+
+        function createPhysicalShops() {
+            const shopConfigs = [
+                { id: 'speed', name: 'Скорость', cost: 150, color: 0xFFFF00, pos: {x: 6, z: -4} },
+                { id: 'luck', name: 'Удача', cost: 500, color: 0x00FF00, pos: {x: 6, z: 0} },
+                { id: 'value', name: 'Ценность', cost: 1000, color: 0x00FFFF, pos: {x: 6, z: 4} }
+            ];
+
+            shopConfigs.forEach(cfg => {
+                const geo = new THREE.BoxGeometry(1, 1, 1);
+                const mat = new THREE.MeshPhongMaterial({ color: 0x333333 });
+                const base = new THREE.Mesh(geo, mat);
+                base.position.set(cfg.pos.x, 0.5, cfg.pos.z);
+                
+                const topGeo = new THREE.BoxGeometry(0.5, 0.5, 0.5);
+                const topMat = new THREE.MeshBasicMaterial({ color: cfg.color, wireframe: true });
+                const top = new THREE.Mesh(topGeo, topMat);
+                top.position.y = 1;
+                base.add(top);
+
+                const sprite = createFloatingText(cfg.name, `$${cfg.cost}`, 1);
+                sprite.position.y = 2;
+                base.add(sprite);
+
+                base.userData = { isShop: true, config: cfg, topMesh: top, textSprite: sprite };
+                scene.add(base);
+                shopObjects.push(base);
+            });
+        }
+
+        function createZones() {
+            // Green Zone (Player) - Right Side
+            const gGeo = new THREE.BoxGeometry(8, 0.1, 12);
+            const gMat = new THREE.MeshBasicMaterial({ color: 0x00ff00, transparent: true, opacity: 0.3 });
+            const gZone = new THREE.Mesh(gGeo, gMat);
+            gZone.position.set(15, 0.05, 0);
+            scene.add(gZone);
+            
+            const gLabel = createFloatingText("ОБЩАЯ БАЗА", "Сохраняется", 2);
+            gLabel.position.set(15, 3, 0);
+            scene.add(gLabel);
+
+            // Red Zone (Enemy) - Left Side
+            const rGeo = new THREE.BoxGeometry(8, 0.1, 12);
+            const rMat = new THREE.MeshBasicMaterial({ color: 0xff0000, transparent: true, opacity: 0.3 });
+            const rZone = new THREE.Mesh(rGeo, rMat);
+            rZone.position.set(-15, 0.05, 0);
+            scene.add(rZone);
+
+            const rLabel = createFloatingText("БАЗА БОТОВ", "Свалка", 2);
+            rLabel.position.set(-15, 3, 0);
+            scene.add(rLabel);
+        }
+
+        function createConveyor() {
+            const geometry = new THREE.BoxGeometry(4, 0.5, 60); 
+            const material = new THREE.MeshPhongMaterial({ color: 0x111111 });
+            const belt = new THREE.Mesh(geometry, material);
+            belt.position.set(0, 0.25, 0);
+            belt.receiveShadow = true;
+            scene.add(belt);
+        }
+
+        function createFloatingText(text, subtext, scale = 1) {
+            const canvas = document.createElement('canvas');
+            canvas.width = 256; canvas.height = 128;
+            const ctx = canvas.getContext('2d');
+            
+            ctx.fillStyle = "white";
+            ctx.font = "bold 40px Arial";
+            ctx.textAlign = "center";
+            ctx.shadowColor="black";
+            ctx.shadowBlur=4;
+            ctx.lineWidth = 4;
+            ctx.strokeText(text, 128, 50);
+            ctx.fillText(text, 128, 50);
+            
+            ctx.fillStyle = "#ffff00";
+            ctx.font = "30px Arial";
+            ctx.strokeText(subtext, 128, 90);
+            ctx.fillText(subtext, 128, 90);
+
+            const tex = new THREE.CanvasTexture(canvas);
+            const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true }));
+            sprite.scale.set(3 * scale, 1.5 * scale, 1);
+            return sprite;
+        }
+
+        function createMemeLabel(text, textColor, bgColor) {
+            const canvas = document.createElement('canvas');
+            canvas.width = 256; canvas.height = 256;
+            const ctx = canvas.getContext('2d');
+            ctx.fillStyle = bgColor;
+            ctx.fillRect(0,0, 256, 256);
+            ctx.strokeStyle = "black";
+            ctx.lineWidth = 10;
+            ctx.strokeRect(0,0,256,256);
+            ctx.fillStyle = textColor;
+            ctx.font = "bold 40px Arial";
+            ctx.textAlign = "center";
+            ctx.textBaseline = "middle";
+            ctx.fillText(text, 128, 128);
+            return new THREE.CanvasTexture(canvas);
+        }
+
+        function spawnMeme() {
+            if (!gameStarted) return;
+
+            let memeId;
+            const rand = Math.random();
+            if (rand < rareChance / 4) memeId = 5; 
+            else if (rand < rareChance) memeId = Math.random() < 0.5 ? 3 : 4; 
+            else memeId = Math.floor(Math.random() * 3); 
+
+            const memeType = memes[memeId];
+
+            let geometry;
+            if (memeType.type === 'cylinder') geometry = new THREE.CylinderGeometry(0.3, 0.3, 0.8, 16);
+            else if (memeType.type === 'sphere') geometry = new THREE.SphereGeometry(0.4, 16, 16);
+            else geometry = new THREE.BoxGeometry(0.6, 0.6, 0.6);
+
+            const texture = createMemeLabel(memeType.name, memeType.labelColor, '#' + memeType.color.toString(16).padStart(6,'0'));
+            const material = new THREE.MeshStandardMaterial({ map: texture });
+
+            const mesh = new THREE.Mesh(geometry, material);
+            mesh.position.set(0, 1, -28);
+            mesh.castShadow = true;
+            mesh.receiveShadow = true;
+            mesh.position.x = (Math.random() * 2) - 1;
+            
+            const incomeVal = memeType.val;
+            
+            mesh.userData = { 
+                isInteractable: true, 
+                value: incomeVal, 
+                typeId: memeId,
+                onConveyor: true,
+                installed: false
+            };
+
+            const infoSprite = createFloatingText(memeType.name, `+$${incomeVal}/с`, 0.8);
+            infoSprite.position.y = 1.2;
+            mesh.add(infoSprite);
+
+            scene.add(mesh);
+            objects.push(mesh);
+            conveyorObjects.push(mesh);
+        }
+
+        function startSpawning() {
+            if (spawnInterval) clearInterval(spawnInterval);
+            spawnInterval = setInterval(spawnMeme, spawnRate);
+        }
+
+        function startIncomeTimer() {
+            // Local income timer for animation purposes, but real data comes from DB snapshot
+            // Just keeps local UI slightly alive if net lags
+        }
+
+        function interact() {
+            if (holdingObject) {
+                dropObject();
+            } else {
+                raycaster.setFromCamera(new THREE.Vector2(0, 0), camera);
+                
+                const shopIntersects = raycaster.intersectObjects(shopObjects, true); 
+                if(shopIntersects.length > 0 && shopIntersects[0].distance < 4) {
+                    let target = shopIntersects[0].object;
+                    while(!target.userData.isShop && target.parent) target = target.parent;
+                    if(target.userData.isShop) {
+                        buyUpgrade(target);
+                        return;
+                    }
+                }
+
+                const pickable = objects.filter(o => !o.userData.installed);
+                const intersects = raycaster.intersectObjects(pickable);
+
+                if (intersects.length > 0) {
+                    const target = intersects[0].object;
+                    if (intersects[0].distance > 4) return;
+
+                    if (target.userData.isInteractable) {
+                        holdingObject = target;
+                        holdingObject.userData.onConveyor = false; 
+                        
+                        camera.add(holdingObject);
+                        holdingObject.position.set(0.5, -0.5, -1); 
+                        holdingObject.rotation.set(0, 0, 0);
+                        
+                        const idx = conveyorObjects.indexOf(holdingObject);
+                        if (idx > -1) conveyorObjects.splice(idx, 1);
+                    }
+                }
+            }
+        }
+
+        function playerDropItem() {
+            if(!holdingObject) return;
+            const worldPos = new THREE.Vector3();
+            holdingObject.getWorldPosition(worldPos);
+            camera.remove(holdingObject);
+            scene.add(holdingObject);
+            holdingObject.position.copy(worldPos);
+            holdingObject.position.y = 0.5;
+            holdingObject = null;
+        }
+
+        function dropObject() {
+            if (!holdingObject) return;
+
+            const worldPos = new THREE.Vector3();
+            holdingObject.getWorldPosition(worldPos);
+            
+            camera.remove(holdingObject);
+            scene.add(holdingObject);
+            holdingObject.position.copy(worldPos);
+            
+            // Check Base Zone (Green: x > 11)
+            if (worldPos.x > 11 && Math.abs(worldPos.z) < 6) {
+                installObject(holdingObject);
+            } else {
+                holdingObject.position.y = 0.5; 
+            }
+            
+            holdingObject = null;
+        }
+
+        function installObject(obj) {
+            // Calculate slot based on total Installed objects (local + remote)
+            const count = installedObjects.length; 
+            const cols = 5;
+            const row = Math.floor(count / cols);
+            const col = count % cols;
+            
+            obj.position.set(12 + col * 1.5, 0.5, -5 + row * 1.5);
+            obj.rotation.set(0, 0, 0);
+            
+            obj.userData.installed = true;
+            obj.userData.isInteractable = false; 
+            
+            // Add to local list immediately so we don't put next item on top
+            installedObjects.push(obj);
+
+            // Send to DB
+            pushInstalledObject(obj);
+            
+            showNotification(`Установлен! +$${obj.userData.value}/сек`);
+        }
+
+        function showNotification(text, isBad = false) {
+            notif.innerText = text;
+            notif.className = isBad ? 'bad-notif' : '';
+            notif.style.opacity = 1;
+            notif.style.top = "40%";
+            setTimeout(() => {
+                notif.style.opacity = 0;
+                notif.style.top = "30%"; 
+            }, 1500);
+        }
+
+        function buyUpgrade(shopMesh) {
+            // Local upgrades for now (Speed/Luck only affect local spawner)
+            const config = shopMesh.userData.config;
+            const type = config.id;
+            
+            if (score >= config.cost) {
+                // Deduct from DB? 
+                // Since score is shared, anyone can spend it! 
+                const roomRef = doc(db, 'artifacts', appId, 'public', 'data', 'rooms', `room_${currentRoomId}`);
+                updateDoc(roomRef, { score: increment(-config.cost) });
+
+                // Increase cost visually locally
+                config.cost = Math.floor(config.cost * 1.5);
+                const newSprite = createFloatingText(config.name, `$${config.cost}`, 1);
+                newSprite.position.y = 2;
+                shopMesh.remove(shopMesh.userData.textSprite);
+                shopMesh.add(newSprite);
+                shopMesh.userData.textSprite = newSprite;
+
+                if (type === 'speed') {
+                    conveyorSpeed += 0.02;
+                    spawnRate = Math.max(500, spawnRate - 300);
+                    startSpawning();
+                    showNotification("Конвейер ускорен!");
+                }
+                if (type === 'luck') {
+                    rareChance += 0.1;
+                    showNotification("Удача повышена!");
+                }
+                if (type === 'value') {
+                    // Bonus cash
+                     updateDoc(roomRef, { score: increment(500) });
+                     showNotification("Кэшбэк в общак!");
+                }
+            } else {
+                showNotification("Не хватает общих денег!", true);
+            }
+        }
+
+        function onKeyDown(event) {
+            switch (event.code) {
+                case 'ArrowUp': case 'KeyW': moveForward = true; break;
+                case 'ArrowLeft': case 'KeyA': moveLeft = true; break;
+                case 'ArrowDown': case 'KeyS': moveBackward = true; break;
+                case 'ArrowRight': case 'KeyD': moveRight = true; break;
+                case 'KeyE': interact(); break;
+                case 'ShiftLeft': isSprinting = true; break;
+            }
+        }
+
+        function onKeyUp(event) {
+            switch (event.code) {
+                case 'ArrowUp': case 'KeyW': moveForward = false; break;
+                case 'ArrowLeft': case 'KeyA': moveLeft = false; break;
+                case 'ArrowDown': case 'KeyS': moveBackward = false; break;
+                case 'ArrowRight': case 'KeyD': moveRight = false; break;
+                case 'ShiftLeft': isSprinting = false; break;
+            }
+        }
+
+        function onWindowResize() {
+            if(!camera) return;
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+
+            const time = performance.now();
+            const delta = (time - prevTime) / 1000;
+            prevTime = time;
+
+            if (controls.isLocked === true) {
+                // Movement logic
+                velocity.x -= velocity.x * 10.0 * delta;
+                velocity.z -= velocity.z * 10.0 * delta;
+                velocity.y -= 9.8 * 100.0 * delta;
+
+                direction.z = Number(moveForward) - Number(moveBackward);
+                direction.x = Number(moveRight) - Number(moveLeft);
+                direction.normalize();
+
+                const speed = isSprinting ? 200.0 : 100.0;
+
+                if (moveForward || moveBackward) velocity.z -= direction.z * speed * delta;
+                if (moveLeft || moveRight) velocity.x -= direction.x * speed * delta;
+
+                controls.moveRight(-velocity.x * delta);
+                controls.moveForward(-velocity.z * delta);
+                
+                if (controls.getObject().position.y < 1.6) {
+                    velocity.y = 0;
+                    controls.getObject().position.y = 1.6;
+                }
+                
+                // Networking: Send position
+                pushPlayerUpdate();
+            }
+
+            // Update Bots
+            bots.forEach(bot => bot.update(delta));
+
+            // Move Conveyor Objects
+            for (let i = conveyorObjects.length - 1; i >= 0; i--) {
+                const obj = conveyorObjects[i];
+                if (obj.userData.onConveyor) {
+                    obj.position.z += conveyorSpeed;
+                    if(obj.children.length > 0) obj.children[0].lookAt(camera.position);
+
+                    if (obj.position.z > 25) {
+                        scene.remove(obj);
+                        const allIdx = objects.indexOf(obj);
+                        if(allIdx > -1) objects.splice(allIdx, 1);
+                        conveyorObjects.splice(i, 1);
+                        if(obj.geometry) obj.geometry.dispose();
+                    }
+                }
+            }
+
+            // Animate Shop Holograms
+            shopObjects.forEach(shop => {
+                if(shop.userData.topMesh) {
+                    shop.userData.topMesh.rotation.y += delta;
+                    shop.userData.topMesh.rotation.x += delta * 0.5;
+                }
+            });
+
+            if (holdingObject) {
+                holdingObject.position.y = -0.5 + Math.sin(time * 0.005) * 0.02;
+            }
+            
+            // Name tags look at camera
+            Object.values(remotePlayers).forEach(mesh => {
+                mesh.children[2].lookAt(camera.position); // Sprite is index 2
+            });
+
+            renderer.render(scene, camera);
+        }
+    </script>
+</body>
+</html>
